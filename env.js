@@ -1,0 +1,3 @@
+window.SUPABASE_URL = "https://boapdjkervmeequpdfci.supabase.co",
+window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvYXBkamtlcnZtZWVxdXBkZmNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMTQ0MjcsImV4cCI6MjA4MDU5MDQyN30.xLrzqaX2yR3PwAkxngWS8ONeSqVf_-teXg9yt5bEj3s"
+window.LEAD_WEBHOOK_URL ="https://script.google.com/macros/s/AKfycbz15zlPxsz_lryRGL7sxs8GD0y4hX3ExFUNENH95xpkTdHMVAiJXqjx34myf_QHq0ro/exec"
