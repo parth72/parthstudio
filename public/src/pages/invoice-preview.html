@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Invoice Preview</title>
+
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/components.css">
+<link rel="stylesheet" href="../css/styles.css">
+
+<!-- html2pdf (bundled html2canvas + jsPDF) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+
+<style>
+body{font-family:Inter,Arial;padding:20px;background:#0c1114;color:#eaf6ff}
+.header-row{max-width:1100px;margin:18px auto;display:flex;gap:12px;align-items:center;justify-content:space-between}
+.sheet{max-width:800px;margin:16px auto;background:#fff;color:#111;padding:20px;border-radius:8px;border:1px solid #e6e9ed}
+.row{display:flex;justify-content:space-between;align-items:center}
+.muted{color:#666;font-size:13px}
+.btn{padding:8px 12px;border-radius:8px;border:0;background:#1e90ff;color:#fff;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="header-row">
+  <div><strong style="color:#fff">Invoice Preview</strong></div>
+  <div><button id="downloadBtn" class="btn">Download PDF</button></div>
+</div>
+
+<div id="sheet" class="sheet" aria-live="polite">Loading invoice…</div>
+
+<script src="/public/env.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+
+<script>
+(async function(){
+  const SUPABASE_URL = window.SUPABASE_URL || '';
+  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY){ document.getElementById('sheet').innerText = 'Missing env.js keys'; return; }
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // parse id
+  const params = new URLSearchParams(location.search);
+  const id = params.get('id');
+  if(!id){ document.getElementById('sheet').innerText = 'Invoice id missing'; return; }
+
+  // fetch invoice -> project -> client
+  async function fetchInvoice(id){
+    const invRes = await supabase.from('invoices').select('*').eq('id', id).single();
+    if(invRes.error) throw invRes.error;
+    const inv = invRes.data;
+    let project = null, client = null;
+    if(inv.project_id){
+      const p = await supabase.from('projects').select('*').eq('id', inv.project_id).single();
+      if(!p.error) project = p.data;
+    }
+    if(project && project.client_id){
+      const c = await supabase.from('clients').select('*').eq('id', project.client_id).single();
+      if(!c.error) client = c.data;
+    }
+    return { inv, project, client };
+  }
+
+  let doc;
+  try { doc = await fetchInvoice(id); } catch(e){ console.error(e); document.getElementById('sheet').innerText = 'Failed to load invoice — check console.'; return; }
+
+  const { inv, project, client } = doc;
+  const sheet = document.getElementById('sheet'); sheet.innerHTML = '';
+
+  // build DOM
+  const header = document.createElement('div');
+  header.style.display = 'flex'; header.style.justifyContent = 'space-between';
+  const left = document.createElement('div');
+  left.innerHTML = '<h2 style="margin:0">' + (inv.invoice_no || (inv.id && inv.id.slice(0,8))) + '</h2><div class="muted">Issued: ' + (inv.issue_date || '') + '</div>';
+  const right = document.createElement('div'); right.style.textAlign='right';
+  right.innerHTML = '<strong>' + (client && client.name ? client.name : '') + '</strong><div class="muted">' + (client && client.email ? client.email : '') + '</div>';
+  header.appendChild(left); header.appendChild(right);
+  sheet.appendChild(header);
+
+  const hr = document.createElement('hr'); hr.style.margin='16px 0'; sheet.appendChild(hr);
+
+  const body = document.createElement('div');
+  body.innerHTML =
+    '<div style="display:flex;justify-content:space-between"><div><div style="font-weight:700">' + (project && project.title ? project.title : '—') + '</div><div class="muted">' + (project && project.description ? project.description : '') + '</div></div>' +
+    '<div style="text-align:right"><div style="font-weight:700;font-size:18px">₹ ' + (Number(inv.amount || 0).toLocaleString()) + '</div><div class="muted">Status: ' + (inv.status || '—') + '</div></div></div>';
+
+  sheet.appendChild(body);
+
+  if(inv.notes){
+    const notesWrap = document.createElement('div'); notesWrap.style.marginTop = '18px';
+    notesWrap.innerHTML = '<strong>Notes</strong><div class="muted" style="margin-top:6px">' + (inv.notes) + '</div>';
+    sheet.appendChild(notesWrap);
+  }
+
+  // download via html2pdf
+  const downloadBtn = document.getElementById('downloadBtn');
+  downloadBtn.onclick = function(){
+    const opt = {
+      margin: [8,8,8,8],
+      filename: (inv.invoice_no || ('invoice-'+(inv.id||'').slice(0,8))) + '.pdf',
+      image: { type:'jpeg', quality:0.98 },
+      html2canvas: { scale:2, useCORS:true },
+      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+    };
+    downloadBtn.disabled = true;
+    downloadBtn.textContent = 'Generating PDF…';
+    html2pdf().set(opt).from(sheet).save().then(()=>{ downloadBtn.disabled=false; downloadBtn.textContent='Download PDF'; }).catch(err=>{ console.error(err); alert('PDF failed — check console.'); downloadBtn.disabled=false; downloadBtn.textContent='Download PDF'; });
+  };
+
+})();
+</script>
+</body>
+</html>
