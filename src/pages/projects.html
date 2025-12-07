@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Studio Manager — Projects</title>
+
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/components.css">
+<link rel="stylesheet" href="../css/styles.css">
+
+<style>
+:root{ --muted: rgba(255,255,255,0.6); }
+html,body{height:100%;margin:0;background:linear-gradient(140deg,#0c252c,#132c33);-webkit-font-smoothing:antialiased;font-family:Inter,system-ui,Roboto;color:#eaf6ff}
+.app{max-width:1200px;margin:28px auto;border-radius:18px;display:grid;grid-template-columns:260px 1fr;padding:18px;min-height:76vh;background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03);box-shadow:0 20px 60px rgba(2,10,15,0.6)}
+.sidebar{padding:22px;display:flex;flex-direction:column;gap:18px;background:linear-gradient(180deg, rgba(3,12,16,0.6), rgba(2,8,12,0.55));border-radius:12px}
+.brand{font-weight:700;font-size:18px}
+.nav{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.nav button{all:unset;display:flex;align-items:center;gap:10px;padding:10px;border-radius:10px;color:var(--muted);cursor:pointer}
+.nav button.active{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));color:#eaf6ff}
+.main{padding:22px;display:grid;grid-template-columns:1fr;gap:20px}
+.header{display:flex;justify-content:space-between;align-items:center}
+.title{font-size:28px;font-weight:700;margin:0}
+.subtitle{color:var(--muted);margin-top:6px}
+.toolbar{display:flex;gap:12px;align-items:center}
+.input, select.input { width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background:rgba(255,255,255,0.02); color:#eaf6ff }
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:12px}
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:14px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 8px 26px rgba(2,8,12,0.36);color:var(--muted)}
+.card h4{margin:0;color:#eaf6ff}
+.meta{font-size:13px;color:var(--muted);margin-top:8px}
+.actions{display:flex;gap:8px;margin-top:12px}
+.btn-primary{background:#1e90ff;color:#fff;padding:10px 14px;border-radius:8px;border:none;cursor:pointer}
+.ghost{background:transparent;color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.06);padding:8px 10px;border-radius:8px;cursor:pointer}
+
+/* modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:none;z-index:1200}
+.modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:720px;max-width:95%;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:12px;padding:18px;border:1px solid rgba(255,255,255,0.03);z-index:1300;display:none}
+.form-row{display:flex;gap:12px;margin-top:8px}
+.col{flex:1}
+.confirm-row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+@media (max-width:980px){ .app{grid-template-columns:1fr;padding:12px} .main{grid-template-columns:1fr;padding:12px} .grid{grid-template-columns:1fr} .modal{width:95%} }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">Studio Manager</div>
+    <nav class="nav">
+      <button onclick="location.href='dashboard.html'">Dashboard</button>
+      <button class="active">Projects</button>
+      <button onclick="location.href='invoices.html'">Invoices</button>
+      <button onclick="location.href='clients.html'">Clients</button>
+      <button onclick="location.href='leads.html'">Leads</button>
+      <button onclick="location.href='portfolio-public.html'">Portfolio</button>
+      <button onclick="location.href='team.html'">Team</button>
+    </nav>
+    <div style="margin-top:auto;">
+      <div class="mini" style="margin-bottom:8px;">Logged as <b id="whoAmI">—</b></div>
+      <button id="logoutBtn" class="ghost">⟲</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="header">
+      <div>
+        <div class="title">Projects</div>
+        <div class="subtitle">Create projects and track deadlines</div>
+      </div>
+      <div class="toolbar">
+        <input id="searchBox" class="input" placeholder="Search projects..." />
+        <button id="btnNewProject" class="btn-primary">+ New Project</button>
+      </div>
+    </div>
+
+    <div id="grid" class="grid"></div>
+  </main>
+</div>
+
+<!-- modal -->
+<div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
+<div id="modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true"></div>
+
+<script src="/env.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+
+<script>
+/* Projects page — batch 2 production-ready
+   - Requires clients to exist before creating projects
+   - Uses date input for deadline
+   - me variable used for activity logging
+*/
+
+(async function(){
+  const SUPABASE_URL = window.SUPABASE_URL || '';
+  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY){ document.body.innerHTML = '<div style="padding:24px;color:#ff9b9b">Missing env.js</div>'; return; }
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // session + me
+  let me = 'admin';
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if(!session || !session.user) return window.location.href = 'login.html';
+    const email = session.user.email || 'admin';
+    document.getElementById('whoAmI').innerText = email.split('@')[0] || email;
+    me = email;
+  } catch(e){ console.error('session err', e); return window.location.href='login.html'; }
+
+  // logout
+  document.getElementById('logoutBtn').addEventListener('click', async ()=> {
+    await supabase.auth.signOut();
+    window.location.href = 'login.html';
+  });
+
+  // helpers
+  async function fetchTable(table, opts={}) {
+    let q = supabase.from(table).select(opts.select || '*');
+    if(opts.order) q = q.order(opts.order[0], { ascending: !!opts.order[1] });
+    if(opts.limit) q = q.limit(opts.limit);
+    const { data, error } = await q;
+    if(error) console.warn('fetch', table, error);
+    return { data, error };
+  }
+  async function insertRow(table, payload){ const { data, error } = await supabase.from(table).insert(payload).select(); if(error) throw error; return data; }
+  async function updateRow(table, idField, idValue, payload){ const { data, error } = await supabase.from(table).update(payload).eq(idField, idValue).select(); if(error) throw error; return data; }
+  async function deleteRow(table, idField, idValue){ const { data, error } = await supabase.from(table).delete().eq(idField, idValue).select(); if(error) throw error; return data; }
+  async function logActivity({ type, actor, detail }){ try { await supabase.from('activity').insert({ type, actor, detail, created_at: new Date().toISOString() }); } catch(e){ console.warn('logActivity', e); } }
+
+  // modal helpers
+  const modal = document.getElementById('modal'), backdrop = document.getElementById('modalBackdrop');
+  function openModal(html){ modal.innerHTML = html; backdrop.style.display = 'block'; modal.style.display = 'block'; backdrop.setAttribute('aria-hidden','false'); modal.setAttribute('aria-hidden','false'); const first = modal.querySelector('input,select,textarea,button'); if(first) first.focus(); }
+  function closeModal(){ modal.style.display = 'none'; backdrop.style.display = 'none'; modal.innerHTML = ''; backdrop.setAttribute('aria-hidden','true'); modal.setAttribute('aria-hidden','true'); }
+  backdrop.addEventListener('click', closeModal);
+
+  function openFormModal({ title='Form', fields=[], onSubmit }){
+    const id = 'form-'+Date.now();
+    let html = `<div><h3 style="margin:0 0 8px 0">${title}</h3><form id="${id}">`;
+    fields.forEach(f=>{
+      if(f.type === 'textarea'){
+        html += `<label style="display:block;margin-top:8px;font-weight:600">${f.label || f.name}</label><textarea name="${f.name}" placeholder="${f.placeholder||''}">${f.value?f.value:''}</textarea>`;
+      } else if(f.type === 'select'){
+        html += `<label style="display:block;margin-top:8px;font-weight:600">${f.label||f.name}</label><select class="input" name="${f.name}">${f.options.map(o=>`<option value="${o.value}" ${o.value===f.value?'selected':''}>${o.label}</option>`).join('')}</select>`;
+      } else {
+        html += `<label style="display:block;margin-top:8px;font-weight:600">${f.label||f.name}</label><input class="input" name="${f.name}" type="${f.type||'text'}" placeholder="${f.placeholder||''}" value="${f.value?f.value:''}" ${f.required? 'required':''} />`;
+      }
+    });
+    html += `<div class="confirm-row"><button type="button" id="cancelBtn" class="ghost">Cancel</button><button type="submit" class="btn-primary">Save</button></div></form></div>`;
+    openModal(html);
+    const form = document.getElementById(id);
+    form.addEventListener('submit', async (e)=> {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const payload = {};
+      fields.forEach(f => payload[f.name] = fd.get(f.name));
+      try {
+        await onSubmit(payload, form);
+        closeModal();
+      } catch(err){
+        alert('Save failed: ' + (err?.message || err));
+        console.error(err);
+      }
+    });
+    document.getElementById('cancelBtn').onclick = closeModal;
+  }
+
+  // data + render
+  let clients = [], projects = [];
+  async function loadClients(){ const res = await fetchTable('clients', { order:['created_at', false] }); clients = (res && res.data) ? res.data : []; }
+  async function loadProjects(){ const res = await fetchTable('projects', { order:['created_at', false] }); projects = (res && res.data) ? res.data : []; renderGrid(); }
+
+  function renderGrid(){
+    const grid = document.getElementById('grid'); grid.innerHTML = '';
+    if(!projects.length){ grid.innerHTML = '<div class="card">No projects yet</div>'; return; }
+    projects.forEach(p=>{
+      const clientName = (clients.find(c=> String(c.id) === String(p.client_id)) || {}).name || (p.client || '—');
+      const el = document.createElement('div'); el.className='card';
+      el.innerHTML = `<h4>${p.title || 'Untitled'}</h4>
+        <div class="meta">Client: ${ clientName }</div>
+        <div class="meta">Amount: ₹${p.amount||0} · Status: ${p.status||'—'}</div>
+        <div class="meta">Deadline: ${p.deadline || '—'}</div>
+        <div class="actions"><button class="ghost" data-id="${p.id}" data-action="edit">Edit</button><button class="ghost" data-id="${p.id}" data-action="delete">Delete</button></div>`;
+      grid.appendChild(el);
+    });
+  }
+
+  // UI actions
+  document.getElementById('btnNewProject').addEventListener('click', async ()=>{
+    await loadClients();
+    if(!clients.length){ alert('Create a client first'); return; }
+    openFormModal({
+      title:'Add Project',
+      fields:[
+        { name:'title', label:'Title', required:true },
+        { name:'client_id', label:'Client', type:'select', options: clients.map(c=>({ value: c.id, label: c.name })) },
+        { name:'amount', label:'Amount (flat ₹)', type:'number', required:true, placeholder:'50000' },
+        { name:'deadline', label:'Deadline', type:'date' , placeholder:'' },
+        { name:'status', label:'Status', type:'select', options:[{value:'inprogress',label:'In progress'},{value:'completed',label:'Completed'},{value:'onhold',label:'On hold'}], value:'inprogress' }
+      ],
+      onSubmit: async (payload)=>{
+        if(!payload.client_id){ throw 'Please select a client from the list'; }
+        payload.amount = Number(payload.amount || 0);
+        payload.created_at = new Date().toISOString();
+        await insertRow('projects', payload);
+        await logActivity({ type:'project.create', actor: me, detail: `Created project ${payload.title}` });
+        await loadProjects();
+      }
+    });
+  });
+
+  document.getElementById('grid').addEventListener('click', async (e)=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    const id = btn.dataset.id, action = btn.dataset.action;
+    const item = projects.find(x => String(x.id) === String(id));
+    if(action === 'edit'){
+      await loadClients();
+      openFormModal({
+        title:'Edit Project',
+        fields:[
+          { name:'title', label:'Title', value:item.title, required:true },
+          { name:'client_id', label:'Client', type:'select', options: clients.map(c=>({ value: c.id, label: c.name })), value: item.client_id },
+          { name:'amount', label:'Amount (flat ₹)', type:'number', value: item.amount || 0, required:true },
+          { name:'deadline', label:'Deadline', type:'date', value: item.deadline || '' },
+          { name:'status', label:'Status', type:'select', options:[{value:'inprogress',label:'In progress'},{value:'completed',label:'Completed'},{value:'onhold',label:'On hold'}], value: item.status || 'inprogress' }
+        ],
+        onSubmit: async (payload)=>{
+          payload.amount = Number(payload.amount || 0);
+          payload.updated_at = new Date().toISOString();
+          await updateRow('projects','id', item.id, payload);
+          await logActivity({ type:'project.update', actor: me, detail: `Updated project ${payload.title}` });
+          await loadProjects();
+        }
+      });
+    } else if(action === 'delete'){
+      if(!confirm('Permanently delete this project?')) return;
+      try {
+        await deleteRow('projects','id', item.id);
+        await logActivity({ type:'project.delete', actor: me, detail: `Deleted project ${item.title}` });
+        await loadProjects();
+      } catch(e){ alert('Delete failed'); console.error(e); }
+    }
+  });
+
+  // search
+  document.getElementById('searchBox').addEventListener('input', (e)=>{
+    const q = e.target.value.trim().toLowerCase();
+    const filtered = (projects||[]).filter(p => !q || (p.title||'').toLowerCase().includes(q) || (p.description||'').toLowerCase().includes(q));
+    // render filtered
+    const grid = document.getElementById('grid'); grid.innerHTML = '';
+    if(!filtered.length){ grid.innerHTML = '<div class="card">No projects</div>'; return; }
+    filtered.forEach(p=>{
+      const clientName = (clients.find(c=> String(c.id) === String(p.client_id)) || {}).name || (p.client || '—');
+      const el = document.createElement('div'); el.className='card';
+      el.innerHTML = `<h4>${p.title || 'Untitled'}</h4>
+        <div class="meta">Client: ${ clientName }</div>
+        <div class="meta">Amount: ₹${p.amount||0} · Status: ${p.status||'—'}</div>
+        <div class="meta">Deadline: ${p.deadline || '—'}</div>
+        <div class="actions"><button class="ghost" data-id="${p.id}" data-action="edit">Edit</button><button class="ghost" data-id="${p.id}" data-action="delete">Delete</button></div>`;
+      grid.appendChild(el);
+    });
+  });
+
+  // init
+  await loadClients();
+  await loadProjects();
+
+})();
+</script>
+</body>
+</html>

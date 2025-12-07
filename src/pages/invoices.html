@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Studio Manager — Invoices</title>
+
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/components.css">
+<link rel="stylesheet" href="../css/styles.css">
+
+<style>
+:root { --muted: rgba(255,255,255,0.6); }
+html,body{height:100%;margin:0;background:linear-gradient(140deg,#0c252c,#132c33);-webkit-font-smoothing:antialiased;font-family:Inter,system-ui,Roboto;color:#eaf6ff}
+.app{max-width:1200px;margin:28px auto;border-radius:18px;display:grid;grid-template-columns:260px 1fr;padding:18px;min-height:76vh;background:linear-gradient(180deg,rgba(255,255,255,0.015),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03);box-shadow:0 20px 60px rgba(2,10,15,0.6)}
+.sidebar{padding:22px;display:flex;flex-direction:column;gap:18px;background:linear-gradient(180deg,rgba(3,12,16,0.6),rgba(2,8,12,0.55));border-radius:12px}
+.brand{font-weight:700;font-size:18px}
+.nav{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.nav button{all:unset;display:flex;align-items:center;gap:10px;padding:10px;border-radius:10px;color:var(--muted);cursor:pointer}
+.nav button.active{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));color:#eaf6ff}
+.main{padding:22px;display:grid;grid-template-columns:1fr;gap:20px}
+.header{display:flex;justify-content:space-between;align-items:center}
+.title{font-size:28px;font-weight:700;margin:0}
+.subtitle{color:var(--muted);margin-top:6px}
+.input, select.input { width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background:rgba(255,255,255,0.02); color:#eaf6ff; box-sizing:border-box; }
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:12px}
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:14px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 8px 26px rgba(2,8,12,0.36);color:var(--muted)}
+.card h4{margin:0;color:#eaf6ff}
+.meta{font-size:13px;color:var(--muted);margin-top:8px}
+.actions{display:flex;gap:8px;margin-top:12px}
+.btn-primary{background:#1e90ff;color:#fff;padding:10px 14px;border-radius:8px;border:none;cursor:pointer}
+.ghost{background:transparent;color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.06);padding:8px 10px;border-radius:8px;cursor:pointer}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:none;z-index:1200}
+.modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:720px;max-width:95%;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:12px;padding:18px;border:1px solid rgba(255,255,255,0.03);z-index:1300;display:none;max-height:85vh;overflow:auto}
+.confirm-row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+@media (max-width:980px){ .app{grid-template-columns:1fr;padding:12px} .main{grid-template-columns:1fr;padding:12px} .grid{grid-template-columns:1fr} .modal{width:95%} }
+</style>
+</head>
+<body>
+<div class="app" role="application" aria-label="Studio Manager - Invoices">
+  <aside class="sidebar" aria-label="Sidebar">
+    <div class="brand">Studio Manager</div>
+    <nav class="nav" aria-label="Main navigation">
+      <button onclick="location.href='dashboard.html'">Dashboard</button>
+      <button onclick="location.href='projects.html'">Projects</button>
+      <button class="active">Invoices</button>
+      <button onclick="location.href='clients.html'">Clients</button>
+      <button onclick="location.href='leads.html'">Leads</button>
+      <button onclick="location.href='portfolio-public.html'">Portfolio</button>
+      <button onclick="location.href='team.html'">Team</button>
+    </nav>
+
+    <div style="margin-top:auto;">
+      <div class="mini" style="margin-bottom:8px;">Logged as <b id="whoAmI">—</b></div>
+      <button id="logoutBtn" class="ghost" title="Logout">⟲</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="header">
+      <div>
+        <div class="title">Invoices</div>
+        <div class="subtitle">Create and manage invoices</div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <input id="searchBox" class="input" placeholder="Search invoices..." />
+        <button id="btnNewInvoice" class="btn-primary">+ New Invoice</button>
+      </div>
+    </div>
+
+    <div id="grid" class="grid" aria-live="polite"></div>
+  </main>
+</div>
+
+<div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
+<div id="modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true"></div>
+
+<script src="/env.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+
+<script>
+/* small DOM helper */
+function el(tag, props) {
+  const e = document.createElement(tag);
+  if (props) Object.entries(props).forEach(([k,v])=>{
+    if (k === 'text') e.textContent = v;
+    else if (k === 'html') e.innerHTML = v;
+    else e.setAttribute(k, v);
+  });
+  return e;
+}
+
+/* modal */
+const modal = document.getElementById('modal'), backdrop = document.getElementById('modalBackdrop');
+function openModal(node){ modal.innerHTML=''; modal.appendChild(node); modal.style.display='block'; backdrop.style.display='block'; backdrop.setAttribute('aria-hidden','false'); modal.setAttribute('aria-hidden','false'); }
+function closeModal(){ modal.style.display='none'; backdrop.style.display='none'; modal.innerHTML=''; backdrop.setAttribute('aria-hidden','true'); modal.setAttribute('aria-hidden','true'); }
+backdrop.addEventListener('click', closeModal);
+
+/* broadcast channel fallback */
+let bc = null;
+try { bc = new BroadcastChannel('studio-manager'); } catch(e){ bc = null; }
+function notifyChange(table){ const payload = {table:table,ts:Date.now()}; try{ if(bc) bc.postMessage(payload); }catch(e){} try{ localStorage.setItem('sm_update', JSON.stringify(payload)); }catch(e){} }
+
+/* supabase init */
+const SUPABASE_URL = window.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
+const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+let invoices = [], projects = [], clients = [], me = 'admin';
+
+(async function init(){
+  if(!sb){ document.body.innerHTML = '<div style="padding:24px;color:#ff9b9b">Missing env.js or supabase lib</div>'; return; }
+
+  // auth check
+  try {
+    const s = await sb.auth.getSession();
+    const session = s && s.data ? s.data.session : null;
+    if(!session || !session.user){ location.href='login.html'; return; }
+    me = session.user.email || 'admin';
+    document.getElementById('whoAmI').textContent = me.split('@')[0] || me;
+  } catch(e){ console.warn('auth check failed', e); }
+
+  document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+    await sb.auth.signOut(); location.href = 'login.html';
+  });
+
+  // listen cross-tab
+  if(bc){ bc.onmessage = (ev)=> { if(ev.data && ev.data.table === 'invoices') loadAll(); }; }
+  window.addEventListener('storage', (ev)=> { if(ev.key === 'sm_update'){ try{ const p = JSON.parse(ev.newValue||'{}'); if(p.table === 'invoices') loadAll(); }catch(e){} } });
+
+  // load data & ui
+  await loadAll();
+})();
+
+async function fetchTable(name){
+  const r = await sb.from(name).select('*').order('created_at', { ascending:false });
+  return (r && r.data) ? r.data : [];
+}
+
+async function loadAll(){
+  projects = await fetchTable('projects');
+  clients = await fetchTable('clients');
+  invoices = await fetchTable('invoices');
+  renderGrid();
+}
+
+function renderGrid(){
+  const box = document.getElementById('grid'); box.innerHTML='';
+  const q = (document.getElementById('searchBox').value || '').toLowerCase();
+
+  const visible = invoices.filter(inv => {
+    const a = (inv.invoice_no||'').toLowerCase();
+    const b = (inv.notes||'').toLowerCase();
+    return !q || a.indexOf(q) !== -1 || b.indexOf(q) !== -1;
+  });
+
+  if(!visible.length){ box.appendChild(el('div',{class:'card', text:'No invoices yet'})); return; }
+
+  visible.forEach(inv=>{
+    const proj = projects.find(p=>String(p.id)===String(inv.project_id)) || {};
+    const client = clients.find(c=>String(c.id)===String(proj.client_id)) || {};
+
+    const card = el('div',{class:'card'});
+    card.appendChild(el('h4',{text: 'Invoice ' + (inv.invoice_no || (inv.id && inv.id.slice(0,8)))}));
+    card.appendChild(el('div',{class:'meta', text:'Project: ' + (proj.title || '—')}));
+    card.appendChild(el('div',{class:'meta', text:'Client: ' + (client.name || '—')}));
+    card.appendChild(el('div',{class:'meta', text:'Amount: ₹' + (inv.amount || 0) + '  · Status: ' + (inv.status || '—')}));
+
+    const actions = el('div',{class:'actions'});
+    const v = el('button',{class:'ghost', text:'View'}); v.onclick = ()=> viewInvoice(inv);
+    const p = el('button',{class:'ghost', text:'Preview'}); p.onclick = ()=> window.open('invoice-preview.html?id=' + encodeURIComponent(inv.id), '_blank');
+    const d = el('button',{class:'ghost', text:'Delete'}); d.onclick = ()=> deleteInvoice(inv);
+
+    actions.appendChild(v); actions.appendChild(p); actions.appendChild(d);
+    card.appendChild(actions);
+    box.appendChild(card);
+  });
+}
+
+/* view */
+function viewInvoice(inv){
+  const proj = projects.find(p=>String(p.id)===String(inv.project_id)) || {};
+  const client = clients.find(c=>String(c.id)===String(proj.client_id)) || {};
+  const box = el('div');
+  box.appendChild(el('h3',{text: 'Invoice ' + (inv.invoice_no || (inv.id && inv.id.slice(0,8)))}));
+  box.appendChild(el('div',{class:'meta', text: proj.title || '—'}));
+  box.appendChild(el('div',{class:'meta', text: (client.name||'') + ' · ₹' + (inv.amount||0)}));
+  if(inv.notes) box.appendChild(el('div',{class:'meta', text: inv.notes}));
+  const closeBtn = el('button',{class:'ghost', text:'Close'}); closeBtn.onclick = closeModal;
+  box.appendChild(closeBtn);
+  openModal(box);
+}
+
+/* delete (hard) */
+async function deleteInvoice(inv){
+  if(!confirm('Delete invoice?')) return;
+  try {
+    const res = await sb.from('invoices').delete().eq('id', inv.id);
+    if(res.error) throw res.error;
+    await sb.from('activity').insert({ type:'invoice.delete', actor:me, detail:'Deleted invoice '+(inv.invoice_no||inv.id.slice(0,8)), created_at: new Date().toISOString() });
+    notifyChange('invoices');
+    await loadAll();
+  } catch(e){ console.error('delete invoice', e); alert('Delete failed — check console.'); }
+}
+
+/* create invoice modal */
+document.getElementById('btnNewInvoice').addEventListener('click', ()=>{
+  if(!projects.length) return alert('Create a project first');
+  const box = el('div');
+  box.appendChild(el('h3',{text:'Create Invoice'}));
+
+  const form = el('form'); form.style.marginTop='10px';
+  form.appendChild(el('label',{text:'Project'}));
+  const sel = el('select',{class:'input', name:'project_id'});
+  projects.forEach(p=>{ const o = el('option'); o.value = p.id; o.textContent = p.title; sel.appendChild(o); });
+  form.appendChild(sel);
+
+  form.appendChild(el('label',{text:'Amount'}));
+  const amt = el('input'); amt.type='number'; amt.className='input'; amt.name='amount'; form.appendChild(amt);
+
+  form.appendChild(el('label',{text:'Status'}));
+  const stat = el('select'); stat.className='input'; stat.name='status';
+  ['unpaid','paid','overdue'].forEach(s=>{ const o = el('option'); o.value=s; o.textContent=s; stat.appendChild(o); });
+  form.appendChild(stat);
+
+  form.appendChild(el('label',{text:'Notes'}));
+  const notes = el('textarea'); notes.className='input'; notes.name='notes'; form.appendChild(notes);
+
+  const row = el('div',{class:'confirm-row'});
+  const cancel = el('button',{class:'ghost', type:'button', text:'Cancel'}); cancel.onclick = closeModal;
+  const save = el('button',{class:'btn-primary', type:'submit', text:'Create'});
+  row.appendChild(cancel); row.appendChild(save); form.appendChild(row);
+
+  form.onsubmit = async function(e){
+    e.preventDefault();
+    const payload = {
+      project_id: sel.value,
+      amount: Number(amt.value||0),
+      status: stat.value,
+      notes: notes.value||'',
+      invoice_no: 'INV-' + Date.now().toString().slice(-6),
+      created_at: new Date().toISOString(),
+      issue_date: new Date().toISOString().slice(0,10)
+    };
+    try {
+      const r = await sb.from('invoices').insert(payload);
+      if(r.error) throw r.error;
+      await sb.from('activity').insert({ type:'invoice.create', actor:me, detail:'Created invoice '+payload.invoice_no, created_at:new Date().toISOString() });
+      notifyChange('invoices');
+      await loadAll();
+      closeModal();
+    } catch(err){ console.error('create invoice failed', err); alert('Create failed — check console.'); }
+  };
+
+  box.appendChild(form);
+  openModal(box);
+});
+
+document.getElementById('searchBox').addEventListener('input', renderGrid);
+</script>
+</body>
+</html>
